@@ -1,3 +1,4 @@
 config.py
 *.log
 save_pid.txt
+myvenv/

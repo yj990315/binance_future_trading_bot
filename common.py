@@ -40,12 +40,16 @@ FUTURE_SYMBOLS = ['APE/BUSD', 'BAKE/USDT', 'NKN/USDT', 'XEM/USDT', 'LRC/USDT', '
 USDT_FUTURE_SYMBOLS = [s for s in FUTURE_SYMBOLS if s.endswith('USDT')]
 
 
+MAX_LOSS_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+
 def get_last_max_loss_symbol(symbol):
     last_max_loss_symbol = 'Last Max Loss ' + symbol
     return last_max_loss_symbol
 
 
 def get_time_symbol(datetime_obj, symbol):
-    time_string = str(datetime.datetime.strftime(datetime_obj, '%Y-%m-%d %H:%M:%S'))
+    time_string = datetime.datetime.strftime(datetime_obj, '%Y-%m-%d %H:%M:%S')
     time_symbol = ' '.join([time_string, symbol])
     return time_symbol
+

@@ -8,7 +8,7 @@ import redis
 import pytz
 import websockets
 
-from common import USDT_FUTURE_SYMBOLS, get_last_max_loss_symbol, get_time_symbol
+from common import USDT_FUTURE_SYMBOLS, get_last_max_loss_symbol, get_time_symbol, MAX_LOSS_TIME_FORMAT
 from functools import partial
 from trader import tasks
 
@@ -49,7 +49,7 @@ def is_proper_for_trading(rd, symbol):
     is_not_trading = not rd.get(symbol) or rd.get(symbol) == 'not trading'
     last_max_loss_symbol = get_last_max_loss_symbol(symbol)
     last_max_loss_time = rd.get(last_max_loss_symbol)
-    if_no_max_lose_in_time = not last_max_loss_time or datetime.datetime.strptime(str(datetime.datetime.now()), '%Y-%m-%d %H:%M:%S.%f') < datetime.datetime.now() - datetime.timedelta(hours=1)
+    if_no_max_lose_in_time = not last_max_loss_time or datetime.datetime.strptime(last_max_loss_time, MAX_LOSS_TIME_FORMAT) < datetime.datetime.now() - datetime.timedelta(hours=1)
     return is_not_trading and if_no_max_lose_in_time
 
 

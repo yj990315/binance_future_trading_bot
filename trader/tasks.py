@@ -1,5 +1,5 @@
 from trader.celery import app
-from common import binance, get_last_max_loss_symbol, get_time_symbol
+from common import binance, get_last_max_loss_symbol, get_time_symbol, MAX_LOSS_TIME_FORMAT
 import redis
 import datetime
 
@@ -157,7 +157,8 @@ class Trader:
 
     def record_max_loss(self):
         last_max_loss_symbol = get_last_max_loss_symbol(self.symbol)
-        self.rd.set(last_max_loss_symbol, str(datetime.datetime.now()))
+        time_string = datetime.datetime.strftime(datetime.datetime.now(), MAX_LOSS_TIME_FORMAT)
+        self.rd.set(last_max_loss_symbol, time_string)
 
 
 @app.task
