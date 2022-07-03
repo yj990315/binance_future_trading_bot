@@ -1,8 +1,7 @@
 from trader.celery import app
-from config import api_key, secret
+from common import binance, get_last_max_loss_symbol, get_time_symbol
 import redis
 import datetime
-import ccxt
 
 
 class Trader:
@@ -15,24 +14,17 @@ class Trader:
         # 도중에 변경 안됨
         self.symbol = symbol
         self.is_buy = is_buy
-        self.side = 'buy' if self.is_buy else 'sell'
+        self.side = 'buy' if self.is_buy == 1 else 'sell'
         # 매매 시에 업데이트
         self.amount = 0  # buy면 +, sell이면 -
         self.is_earning = False
         self.margin_rate = 0
         self.offset_price = price
+        self.last_trade_time = datetime.datetime.now()
         # 항상 최신 유지
         self.last_price = price
         # 바이낸스 객체
-        self.binance = ccxt.binance(config={
-            'apiKey': api_key,
-            'secret': secret,
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'future',
-                'createMarketBuyOrderRequiresPrice': False
-            }
-        })
+        self.binance = binance
         balance = self.binance.fetch_balance()
         self.binance.set_leverage(Trader.LEVERAGE, symbol)
         self.total_balance = balance['USDT']['total']
@@ -45,17 +37,22 @@ class Trader:
         if self.side == 'buy':
             previous_position_num = int(self.rd.get(self.BUY_POSITION_NUM_STR))
             self.rd.set(self.BUY_POSITION_NUM_STR, previous_position_num + 1)
+            print(f'[{self.symbol}] 매수 시작 : 총 매수 포지션 수 {previous_position_num + 1}로 업데이트')
         if self.side == 'sell':
             previous_position_num = int(self.rd.get(self.SELL_POSITION_NUM_STR))
             self.rd.set(self.SELL_POSITION_NUM_STR, previous_position_num + 1)
+            print(f'[{self.symbol}] 매도 시작 : 총 매도 포지션 수 {previous_position_num + 1}로 업데이트')
 
     def reset_position_number(self):
-        if self.side == 'sell':
-            previous_position_num = int(self.rd.get(self.BUY_POSITION_NUM_STR))
-            self.rd.set(self.BUY_POSITION_NUM_STR, previous_position_num + 1)
         if self.side == 'buy':
+            previous_position_num = int(self.rd.get(self.BUY_POSITION_NUM_STR))
+            self.rd.set(self.BUY_POSITION_NUM_STR, previous_position_num - 1)
+            print(f'[{self.symbol}] 매수 종료 : 총 매수 포지션 수 {previous_position_num - 1}로 업데이트')
+
+        if self.side == 'sell':
             previous_position_num = int(self.rd.get(self.SELL_POSITION_NUM_STR))
-            self.rd.set(self.SELL_POSITION_NUM_STR, previous_position_num + 1)
+            self.rd.set(self.SELL_POSITION_NUM_STR, previous_position_num - 1)
+            print(f'[{self.symbol}] 매도 종료 : 총 매도 포지션 수 {previous_position_num - 1}로 업데이트')
 
     def print_order_result(self, order):
         last_price = float(order['price'])
@@ -82,9 +79,7 @@ class Trader:
         self.last_price = float(order['price'])
 
     def update_current_price(self):
-        now = datetime.datetime.now()
-        time_string = datetime.datetime.strftime(now, '%Y-%m-%d %H:%M:%S')
-        time_symbol = ' '.join([time_string, self.symbol])
+        time_symbol = get_time_symbol(datetime.datetime.now(), self.symbol)
         if not self.rd.get(time_symbol):
             return
         self.current_price = float(self.rd.get(time_symbol))
@@ -98,26 +93,39 @@ class Trader:
         return did_change_to_black
 
     def create_market_order(self, amount, reduce_only=False):
+        self.last_trade_time = datetime.datetime.now()
         if amount > 0:
-            return self.binance.create_market_order(self.symbol, 'buy', abs(amount), params={"reduceOnly": reduce_only})
+            return self.binance.create_market_order(self.symbol, 'buy', abs(amount), self.current_price, params={"reduceOnly": reduce_only})
         else:
-            return self.binance.create_market_order(self.symbol, 'sell', abs(amount), params={"reduceOnly": reduce_only})
+            return self.binance.create_market_order(self.symbol, 'sell', abs(amount), self.current_price, params={"reduceOnly": reduce_only})
 
     def increase_position(self, rate):
         self.update_from_balance()
+        prev_amount = self.amount
         amount = self.is_buy * self.total_balance * self.LEVERAGE * rate / self.current_price
         order = self.create_market_order(amount)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
+        print(f'[{self.symbol}] 포지션 증가 전 {self.amount}(평균 단가 : {self.offset_price})')
         self.update_from_balance()
+        print(f'[{self.symbol}] 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+        while self.amount == prev_amount:
+            self.update_from_balance()
+            print(f'[{self.symbol}] 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
 
     def reduce_only(self, rate):
         self.update_from_balance()
-        amount = -1 * self.amount * rate
+        prev_amount = self.amount
+        amount = -1 * prev_amount * rate
         order = self.create_market_order(amount, reduce_only=True)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
+        print(f'[{self.symbol}] 포지션 감소 전 {self.amount}(평균 단가 : {self.offset_price})')
         self.update_from_balance()
+        print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+        while self.amount == prev_amount:
+            self.update_from_balance()
+            print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
 
     def close_all_positions(self):
         self.update_from_balance()
@@ -137,14 +145,19 @@ class Trader:
         return self.is_buy * (self.current_price - self.last_price) / self.last_price
 
     def get_pnl_rate_from_offset_price(self):
+        while self.offset_price == 0:
+            self.update_from_balance()
         return self.is_buy * (self.current_price - self.offset_price) / self.offset_price
 
     def get_previous_price(self, minutes):
-        prev_time = datetime.datetime.now() - datetime.timedelta(minutes=minutes)  # (minutes=INTERVAL_MINUTES)
-        prev_time_string = datetime.datetime.strftime(prev_time, '%Y-%m-%d %H:%M:%S')
-        prev_time_symbol = ' '.join([prev_time_string, self.symbol])
+        prev_time = datetime.datetime.now() - datetime.timedelta(minutes=minutes)
+        prev_time_symbol = get_time_symbol(prev_time, self.symbol)
         prev_price = self.rd.get(prev_time_symbol)
         return prev_price
+
+    def record_max_loss(self):
+        last_max_loss_symbol = get_last_max_loss_symbol(self.symbol)
+        self.rd.set(last_max_loss_symbol, str(datetime.datetime.now()))
 
 
 @app.task
@@ -152,18 +165,16 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
     # 시작
     IS_BUY = 1 if initial_fluctuation_rate < 0 else -1
 
-    start_time = datetime.datetime.now()
-    end_time = start_time + datetime.timedelta(minutes=60)
-
     # 트레이딩
     trader = Trader(symbol=symbol, is_buy=IS_BUY, db_number=db_number, price=price)
     trader.increase_position(0.05)
+    start_trading_time = datetime.datetime.now()
 
-    while datetime.datetime.now() < end_time:
+    while True:
         trader.update_current_price()
         did_change_to_black = trader.update_is_earning()
 
-        if did_change_to_black and trader.margin_rate > 0.08:
+        if did_change_to_black and trader.margin_rate > 0.08 and trader.last_price < trader.offset_price:
                 print(f'[{trader.symbol}] margin_rate : {trader.margin_rate} 본절 도달 후 포지션 줄이기 신호 발생')
                 trader.reduce_only(0.50)
 
@@ -186,12 +197,14 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         # 5% 이상 손실 시 전체 포지션 종료
         if trader.get_if_exceeds_max_loss():
             print(f'[{symbol}] : 5% 이상 손실로 인해 포지션 종료')
+            trader.record_max_loss()
             break
 
         # 물타기
         if trader.get_pnl_rate_from_last_price() < -0.02:
-            print(f'[{symbol}] : 물타기 5% => 직전 거래가보다 2% 이상 손실')
-            trader.increase_position(0.05)
+            if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1):
+                print(f'[{symbol}] : 물타기 5% => 직전 거래가보다 2% 이상 손실')
+                trader.increase_position(0.05)
 
         if trader.get_pnl_rate_from_offset_price() > 0.02 and trader.get_pnl_rate_from_last_price() > 0.02:
             if abs(trader.margin_rate) < 0.02:
@@ -200,6 +213,10 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
 
             print(f'[{symbol}] : 익절 50% => 최초 변동폭 회복 및 직전 거래가보다 2% 이상 이익')
             trader.reduce_only(0.50)
+
+        if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=3) and trader.is_earning:
+            print(f'[{symbol}] : 거래 시작 후 3시간 경과 및 이익 구간이므로 포지션 종료')
+            break
 
     # 포지큼 종료
     trader.close_all_positions()

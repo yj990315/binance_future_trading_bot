@@ -8,7 +8,7 @@ import redis
 import pytz
 import websockets
 
-from config import USDT_FUTURE_SYMBOLS
+from common import USDT_FUTURE_SYMBOLS, get_last_max_loss_symbol, get_time_symbol
 from functools import partial
 from trader import tasks
 
@@ -45,6 +45,14 @@ class Ticker:
                f'low: {self.low}, close: {self.close}, volume: {self.volume}>'
 
 
+def is_proper_for_trading(rd, symbol):
+    is_not_trading = not rd.get(symbol) or rd.get(symbol) == 'not trading'
+    last_max_loss_symbol = get_last_max_loss_symbol(symbol)
+    last_max_loss_time = rd.get(last_max_loss_symbol)
+    if_no_max_lose_in_time = not last_max_loss_time or datetime.datetime.strptime(str(datetime.datetime.now()), '%Y-%m-%d %H:%M:%S.%f') < datetime.datetime.now() - datetime.timedelta(hours=1)
+    return is_not_trading and if_no_max_lose_in_time
+
+
 async def recv_ticker():
     uri = 'wss://fstream.binance.com'
     markets = USDT_FUTURE_SYMBOLS
@@ -68,6 +76,7 @@ async def recv_ticker():
     rd.set(SELL_POSITION_NUM_STR, 0)
     for symbol in USDT_FUTURE_SYMBOLS:
         rd.set(symbol, 'not trading')
+        rd.set(get_last_max_loss_symbol(symbol), '')
 
     async with websockets.connect(uri, ssl=ssl_context) as websocket:
         var = asyncio.Event()
@@ -94,30 +103,28 @@ async def recv_ticker():
             price = recv_data_dict['p']
 
             time = datetime.datetime.fromtimestamp(time_stamp / 1000, tz=pytz.timezone('Asia/Seoul')).replace(microsecond=0)
-            time_string = datetime.datetime.strftime(time, '%Y-%m-%d %H:%M:%S')
-            time_symbol = ' '.join([time_string, symbol])
+            time_symbol = get_time_symbol(time, symbol)
             rd.set(time_symbol, price)
             # 특정 시간 전 데이터 조회
             INTERVAL_MINUTES = 3
             prev_time = time - datetime.timedelta(minutes=INTERVAL_MINUTES)  # (minutes=INTERVAL_MINUTES)
-            prev_time_string = datetime.datetime.strftime(prev_time, '%Y-%m-%d %H:%M:%S')
-            prev_time_symbol = ' '.join([prev_time_string, symbol])
+            prev_time_symbol = get_time_symbol(prev_time, symbol)
             prev_price = rd.get(prev_time_symbol)
             if prev_price:
                 price = float(price)
                 prev_price = float(prev_price)
                 fluctuation_rate = (price - prev_price) / prev_price * 100
-                if abs(fluctuation_rate) >= 2 and (not rd.get(symbol) or rd.get(symbol) == 'not trading'):
+                if abs(fluctuation_rate) >= 2 and is_proper_for_trading(rd, symbol):
                     # TODO : 거래량도 확인해서 신호를 낼까?
                     buy_position_num = int(rd.get(BUY_POSITION_NUM_STR))
                     sell_position_num = int(rd.get(SELL_POSITION_NUM_STR))
                     total_position_num = buy_position_num + sell_position_num
                     if total_position_num >= 4:
                         print(f'[{symbol}] {total_position_num}개의 코인이 이미 거래 중이므로, 신호 무시')
-                    elif fluctuation_rate > 0 and buy_position_num > sell_position_num:
-                        print(f'[{symbol}] {buy_position_num - sell_position_num}개 만큼의 순매수 포지션이므로, 신호 무시')
-                    elif fluctuation_rate < 0 and sell_position_num > buy_position_num:
+                    elif fluctuation_rate > 0 and buy_position_num < sell_position_num:
                         print(f'[{symbol}] {sell_position_num - buy_position_num}개 만큼의 순매도 포지션이므로, 신호 무시')
+                    elif fluctuation_rate < 0 and sell_position_num < buy_position_num:
+                        print(f'[{symbol}] {buy_position_num - sell_position_num}개 만큼의 순매 포지션이므로, 신호 무시')
                     else:
                         print('*************')
                         print(datetime.datetime.now(), '신호 발생')
