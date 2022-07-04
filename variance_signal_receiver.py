@@ -69,6 +69,8 @@ async def recv_ticker():
     rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
     # rd.execute_command('FLUSHDB ASYNC')
 
+    last_rd_reset_date = datetime.date.today()
+
     BUY_POSITION_NUM_STR = 'buy_position_number'
     SELL_POSITION_NUM_STR = 'sell_position_number'
 
@@ -89,11 +91,14 @@ async def recv_ticker():
 
         while not var.is_set():
             # 매일 오전 9시에 초기화
-            if datetime.datetime.now().hour == 9 and datetime.datetime.now().minute == 0 and datetime.datetime.now().second == 0:
-                rd.execute_command('FLUSHDB ASYNC')
-                redis_db_number = 1 - redis_db_number
-                rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
-                # TODO : flush하고 다시 쌓는 데 기다리는 시간 어떻게 할까?
+            if datetime.date.today() != last_rd_reset_date:
+                buy_position_num = int(rd.get(BUY_POSITION_NUM_STR))
+                sell_position_num = int(rd.get(SELL_POSITION_NUM_STR))
+                if buy_position_num == 0 and sell_position_num == 0:
+                    rd.execute_command('FLUSHDB ASYNC')
+                    redis_db_number = 1 - redis_db_number
+                    rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
+                    # TODO : flush하고 다시 쌓는 데 기다리는 시간 어떻게 할까?
 
             recv_data = await websocket.recv()
             recv_data_dict = json.loads(recv_data)['data']
