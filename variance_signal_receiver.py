@@ -77,7 +77,7 @@ async def recv_ticker():
 
     redis_db_number = 0
     rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
-    # rd.execute_command('FLUSHDB ASYNC')
+    rd.execute_command('FLUSHDB ASYNC')
 
     last_rd_reset_date = datetime.date.today()
     last_print_str = ''
@@ -122,6 +122,8 @@ async def recv_ticker():
 
             time = datetime.datetime.fromtimestamp(time_stamp / 1000, tz=pytz.timezone('Asia/Seoul')).replace(microsecond=0)
             time_symbol = get_time_symbol(time, symbol)
+            if symbol == 'BTCUSDT':
+                print(datetime.datetime.now(), price)
             rd.set(time_symbol, price)
             # 특정 시간 전 데이터 조회
             INTERVAL_MINUTES = 3

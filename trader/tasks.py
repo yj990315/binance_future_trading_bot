@@ -2,7 +2,7 @@ from trader.celery import app
 from common import binance, get_last_max_loss_symbol, get_time_symbol, MAX_LOSS_TIME_FORMAT
 import redis
 import datetime
-
+import time
 
 class Trader:
     LEVERAGE = 20
@@ -106,7 +106,6 @@ class Trader:
         order = self.create_market_order(amount)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
-        print(f'[{self.symbol}] 포지션 증가 전 {self.amount}(평균 단가 : {self.offset_price})')
         self.update_from_balance()
         print(f'[{self.symbol}] 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
         while self.amount == prev_amount:
@@ -120,7 +119,6 @@ class Trader:
         order = self.create_market_order(amount, reduce_only=True)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
-        print(f'[{self.symbol}] 포지션 감소 전 {self.amount}(평균 단가 : {self.offset_price})')
         self.update_from_balance()
         print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
         while self.amount == prev_amount:
@@ -130,7 +128,7 @@ class Trader:
     def close_all_positions(self):
         self.update_from_balance()
         self.create_market_order(-1 * self.amount, reduce_only=True)
-        print(f'[{self.symbol}] 포지션 종료')
+        print(f'[{self.symbol}] 포지션 종료\n')
         self.rd.set(self.symbol, 'not trading')
         self.reset_position_number()
 
@@ -170,8 +168,10 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
     trader = Trader(symbol=symbol, is_buy=IS_BUY, db_number=db_number, price=price)
     trader.increase_position(0.05)
     start_trading_time = datetime.datetime.now()
-
+    print('-------------------------------------')
+    print(f'-------[{symbol}] 거래 시작-----------')
     while True:
+        time.sleep(0.001)
         trader.update_current_price()
         did_change_to_black = trader.update_is_earning()
 
@@ -217,6 +217,10 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=3) and trader.is_earning:
             print(f'[{symbol}] : 거래 시작 후 3시간 경과 및 이익 구간이므로 포지션 종료')
+            break
+
+        if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=6):
+            print(f'[{symbol}] : 거래 시작 후 6시간 경과이므로 포지션 종료')
             break
 
     # 포지큼 종료
