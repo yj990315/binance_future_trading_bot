@@ -53,6 +53,16 @@ def is_proper_for_trading(rd, symbol):
     return is_not_trading and if_no_max_lose_in_time
 
 
+# 마지막에 프린트한 것과 같은 내용을 프린트하려고 하면 프린트하지 않음 => 마지막 프린트 내용 리턴
+# 다른 내용이면 프린트 => 새 프린트 내용 리턴
+def print_if_new_and_get_last_print_str(print_str, last_print_str):
+    new_last_print_str = last_print_str
+    if print_str != last_print_str:
+        print(datetime.datetime.now(), print_str)
+        new_last_print_str = print_str
+    return new_last_print_str
+
+
 async def recv_ticker():
     uri = 'wss://fstream.binance.com'
     markets = USDT_FUTURE_SYMBOLS
@@ -70,6 +80,7 @@ async def recv_ticker():
     # rd.execute_command('FLUSHDB ASYNC')
 
     last_rd_reset_date = datetime.date.today()
+    last_print_str = ''
 
     BUY_POSITION_NUM_STR = 'buy_position_number'
     SELL_POSITION_NUM_STR = 'sell_position_number'
@@ -98,6 +109,8 @@ async def recv_ticker():
                     rd.execute_command('FLUSHDB ASYNC')
                     redis_db_number = 1 - redis_db_number
                     rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
+                    print(datetime.datetime.now(), 'REDIS_DB 초기화')
+                    print(f'redis_db_number : {redis_db_number}로 변경')
                     # TODO : flush하고 다시 쌓는 데 기다리는 시간 어떻게 할까?
 
             recv_data = await websocket.recv()
@@ -125,11 +138,14 @@ async def recv_ticker():
                     sell_position_num = int(rd.get(SELL_POSITION_NUM_STR))
                     total_position_num = buy_position_num + sell_position_num
                     if total_position_num >= 4:
-                        print(f'[{symbol}] {total_position_num}개의 코인이 이미 거래 중이므로, 신호 무시')
+                        print_str = f'[{symbol}] {total_position_num}개의 코인이 이미 거래 중이므로, 신호 무시'
+                        last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
                     elif fluctuation_rate > 0 and buy_position_num < sell_position_num:
-                        print(f'[{symbol}] {sell_position_num - buy_position_num}개 만큼의 순매도 포지션이므로, 신호 무시')
+                        print_str = f'[{symbol}] {sell_position_num - buy_position_num}개 만큼의 순매도 포지션이므로, 신호 무시'
+                        last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
                     elif fluctuation_rate < 0 and sell_position_num < buy_position_num:
-                        print(f'[{symbol}] {buy_position_num - sell_position_num}개 만큼의 순매 포지션이므로, 신호 무시')
+                        print_str = f'[{symbol}] {buy_position_num - sell_position_num}개 만큼의 순매 포지션이므로, 신호 무시'
+                        last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
                     else:
                         print('*************')
                         print(datetime.datetime.now(), '신호 발생')
