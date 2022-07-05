@@ -106,12 +106,17 @@ async def recv_ticker():
                 buy_position_num = int(rd.get(BUY_POSITION_NUM_STR))
                 sell_position_num = int(rd.get(SELL_POSITION_NUM_STR))
                 if buy_position_num == 0 and sell_position_num == 0:
-                    rd.execute_command('FLUSHDB ASYNC')
+                    rd.execute_command('FLUSHDB')
                     redis_db_number = 1 - redis_db_number
                     rd = redis.StrictRedis(host='localhost', port=6379, db=redis_db_number, charset="utf-8", decode_responses=True)
                     print(datetime.datetime.now(), 'REDIS_DB 초기화')
                     print(f'redis_db_number : {redis_db_number}로 변경')
-                    # TODO : flush하고 다시 쌓는 데 기다리는 시간 어떻게 할까?
+                    last_rd_reset_date = datetime.date.today()
+                    last_print_str = ''
+                    BUY_POSITION_NUM_STR = 'buy_position_number'
+                    SELL_POSITION_NUM_STR = 'sell_position_number'
+                    rd.set(BUY_POSITION_NUM_STR, 0)
+                    rd.set(SELL_POSITION_NUM_STR, 0)
 
             recv_data = await websocket.recv()
             recv_data_dict = json.loads(recv_data)['data']
