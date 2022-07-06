@@ -5,7 +5,7 @@ import datetime
 import time
 
 class Trader:
-    LEVERAGE = 20
+    LEVERAGE = 15
     MAX_LOSS_RATE = -0.05  # 전체 자산 대비 최대 손실 비율
     BUY_POSITION_NUM_STR = 'buy_position_number'
     SELL_POSITION_NUM_STR = 'sell_position_number'
@@ -166,7 +166,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
 
     # 트레이딩
     trader = Trader(symbol=symbol, is_buy=IS_BUY, db_number=db_number, price=price)
-    trader.increase_position(0.05)
+    trader.increase_position(0.03)
     start_trading_time = datetime.datetime.now()
     print('-------------------------------------')
     print(f'-------[{symbol}] 거래 시작-----------')
@@ -175,7 +175,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         trader.update_current_price()
         did_change_to_black = trader.update_is_earning()
 
-        if did_change_to_black and trader.margin_rate > 0.08 and trader.last_price < trader.offset_price:
+        if did_change_to_black and trader.margin_rate > 0.05 and trader.last_price < trader.offset_price:
                 print(f'[{trader.symbol}] margin_rate : {trader.margin_rate} 본절 도달 후 포지션 줄이기 신호 발생')
                 trader.reduce_only(0.50)
 
@@ -205,14 +205,15 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         if trader.get_pnl_rate_from_last_price() < -0.02:
             if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1):
                 print(f'[{symbol}] : 물타기 5% => 직전 거래가보다 2% 이상 손실')
-                trader.increase_position(0.05)
+                trader.increase_position(0.03)
 
-        if trader.get_pnl_rate_from_offset_price() > 0.02 and trader.get_pnl_rate_from_last_price() > 0.02:
+        if trader.get_pnl_rate_from_offset_price() > abs(initial_fluctuation_rate)/100 * 0.5\
+                and trader.get_pnl_rate_from_last_price() > 0.01:
             if abs(trader.margin_rate) < 0.02:
-                print(f'[{symbol}] : {abs(trader.margin_rate)} < 0.02 : 포지션 종료 => 2% 이익 및 직전 거래가보다 2% 이상 이익')
+                print(f'[{symbol}] : {abs(trader.margin_rate)} < 0.02 : 포지션 종료 => 1% 이익 및 직전 거래가보다 1% 이상 이익')
                 break
 
-            print(f'[{symbol}] : 익절 50% => 최초 변동폭 회복 및 직전 거래가보다 2% 이상 이익')
+            print(f'[{symbol}] : 익절 50% => 최초 변동폭의 절반 회복 및 직전 거래가보다 1% 이상 이익')
             trader.reduce_only(0.50)
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=3) and trader.is_earning:
@@ -224,5 +225,6 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             break
 
     # 포지큼 종료
+    print('-------------------------------------\n\n')
     trader.close_all_positions()
     return
