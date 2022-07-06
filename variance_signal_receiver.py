@@ -127,8 +127,6 @@ async def recv_ticker():
 
             time = datetime.datetime.fromtimestamp(time_stamp / 1000, tz=pytz.timezone('Asia/Seoul')).replace(microsecond=0)
             time_symbol = get_time_symbol(time, symbol)
-            if symbol == 'BTCUSDT':
-                print(datetime.datetime.now(), price)
             rd.set(time_symbol, price)
             # 특정 시간 전 데이터 조회
             INTERVAL_MINUTES = 3
