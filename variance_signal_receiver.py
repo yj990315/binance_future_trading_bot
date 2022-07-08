@@ -63,6 +63,13 @@ def print_if_new_and_get_last_print_str(print_str, last_print_str):
     return new_last_print_str
 
 
+def get_prev_price(symbol, rd, time, time_interval):
+    prev_time = time - datetime.timedelta(minutes=time_interval)
+    prev_time_symbol = get_time_symbol(prev_time, symbol)
+    prev_price = rd.get(prev_time_symbol)
+    return prev_price
+
+
 async def recv_ticker():
     uri = 'wss://fstream.binance.com'
     markets = USDT_FUTURE_SYMBOLS
@@ -129,15 +136,18 @@ async def recv_ticker():
             time_symbol = get_time_symbol(time, symbol)
             rd.set(time_symbol, price)
             # 특정 시간 전 데이터 조회
-            INTERVAL_MINUTES = 3
-            prev_time = time - datetime.timedelta(minutes=INTERVAL_MINUTES)  # (minutes=INTERVAL_MINUTES)
-            prev_time_symbol = get_time_symbol(prev_time, symbol)
-            prev_price = rd.get(prev_time_symbol)
-            if prev_price:
+            price_3_mins_ago = get_prev_price(symbol, rd, time, 3)
+            price_10_mins_ago = get_prev_price(symbol, rd, time, 10)
+            if price_3_mins_ago and price_10_mins_ago:
                 price = float(price)
-                prev_price = float(prev_price)
-                fluctuation_rate = (price - prev_price) / prev_price * 100
-                if abs(fluctuation_rate) >= 2 and is_proper_for_trading(rd, symbol):
+                price_3_mins_ago = float(price_3_mins_ago)
+                price_10_mins_ago = float(price_10_mins_ago)
+                fluctuation_rate_3 = (price - price_3_mins_ago) / price_3_mins_ago * 100
+                fluctuation_rate_10 = (price - price_10_mins_ago) / price_10_mins_ago * 100
+                # 3분 동안과 10분 동안의 방향이 같고, 3분 동안 최소 2% & 10분 동안 최소 1% 이상 같은 방향으로 움직인 경우
+                # 급등 후 급락할 때 롱을 잡지 않기 위함.
+                if abs(fluctuation_rate_3) >= 2 and fluctuation_rate_3 * fluctuation_rate_10 > 2\
+                        and is_proper_for_trading(rd, symbol):
                     # TODO : 거래량도 확인해서 신호를 낼까?
                     buy_position_num = int(rd.get(BUY_POSITION_NUM_STR))
                     sell_position_num = int(rd.get(SELL_POSITION_NUM_STR))
@@ -145,20 +155,20 @@ async def recv_ticker():
                     if total_position_num >= 4:
                         print_str = f'[{symbol}] {total_position_num}개의 코인이 이미 거래 중이므로, 신호 무시'
                         last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
-                    elif fluctuation_rate > 0 and buy_position_num < sell_position_num:
+                    elif fluctuation_rate_3 > 0 and buy_position_num < sell_position_num:
                         print_str = f'[{symbol}] {sell_position_num - buy_position_num}개 만큼의 순매도 포지션이므로, 신호 무시'
                         last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
-                    elif fluctuation_rate < 0 and sell_position_num < buy_position_num:
+                    elif fluctuation_rate_3 < 0 and sell_position_num < buy_position_num:
                         print_str = f'[{symbol}] {buy_position_num - sell_position_num}개 만큼의 순매 포지션이므로, 신호 무시'
                         last_print_str = print_if_new_and_get_last_print_str(print_str, last_print_str)
                     else:
                         print('*************')
                         print(datetime.datetime.now(), '신호 발생')
-                        print(symbol, '등락율 : ', fluctuation_rate, '%')
+                        print(symbol, '등락율 : ', fluctuation_rate_3, '%')
                         print(f'[{symbol}] 거래 시작')
                         print('*************')
                         rd.set(symbol, 'trading')
-                        tasks.trade.delay(redis_db_number, symbol, fluctuation_rate, price)
+                        tasks.trade.delay(redis_db_number, symbol, fluctuation_rate_3, price)
 
 
 def main():
