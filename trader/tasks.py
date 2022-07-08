@@ -6,7 +6,7 @@ import time
 
 class Trader:
     LEVERAGE = 15
-    MAX_LOSS_RATE = -0.05  # 전체 자산 대비 최대 손실 비율
+    MAX_LOSS_RATE = -0.03  # 전체 자산 대비 최대 손실 비율
     BUY_POSITION_NUM_STR = 'buy_position_number'
     SELL_POSITION_NUM_STR = 'sell_position_number'
 
@@ -161,15 +161,15 @@ class Trader:
 
 @app.task
 def trade(db_number, symbol, initial_fluctuation_rate, price):
+    print('-------------------------------------')
+    print(f'-------[{symbol}] 거래 시작-----------')
+
     # 시작
     IS_BUY = 1 if initial_fluctuation_rate < 0 else -1
-
     # 트레이딩
     trader = Trader(symbol=symbol, is_buy=IS_BUY, db_number=db_number, price=price)
     trader.increase_position(0.03)
     start_trading_time = datetime.datetime.now()
-    print('-------------------------------------')
-    print(f'-------[{symbol}] 거래 시작-----------')
     while True:
         time.sleep(0.001)
         trader.update_current_price()
@@ -197,7 +197,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
 
         # 5% 이상 손실 시 전체 포지션 종료
         if trader.get_if_exceeds_max_loss():
-            print(f'[{symbol}] : 5% 이상 손실로 인해 포지션 종료')
+            print(f'[{symbol}] : 3% 이상 손실로 인해 포지션 종료')
             trader.record_max_loss()
             break
 
@@ -225,6 +225,6 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             break
 
     # 포지큼 종료
-    print('-------------------------------------\n\n')
     trader.close_all_positions()
+    print('-------------------------------------\n\n')
     return

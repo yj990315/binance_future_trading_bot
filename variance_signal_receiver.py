@@ -156,6 +156,7 @@ async def recv_ticker():
                         print(datetime.datetime.now(), '신호 발생')
                         print(symbol, '등락율 : ', fluctuation_rate, '%')
                         print(f'[{symbol}] 거래 시작')
+                        print('*************')
                         rd.set(symbol, 'trading')
                         tasks.trade.delay(redis_db_number, symbol, fluctuation_rate, price)
 
