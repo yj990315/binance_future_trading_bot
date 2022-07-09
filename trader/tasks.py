@@ -119,11 +119,9 @@ class Trader:
         order = self.create_market_order(amount, reduce_only=True)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
-        self.update_from_balance()
-        print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
         while self.amount == prev_amount:
             self.update_from_balance()
-            print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+        print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
 
     def close_all_positions(self):
         self.update_from_balance()
@@ -202,9 +200,9 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             break
 
         # 물타기
-        if trader.get_pnl_rate_from_last_price() < -0.02:
+        if trader.get_pnl_rate_from_last_price() < -0.02 and trader.get_pnl_rate_from_offset_price() < -0.02:
             if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1):
-                print(f'[{symbol}] : 물타기 3% => 직전 거래가보다 2% 이상 손실')
+                print(f'[{symbol}] : 물타기 3% => 직전 거래가보다 2% 이상 손실 및 평단가보다 2프로 이상 손실')
                 trader.increase_position(0.03)
 
         if trader.get_pnl_rate_from_offset_price() > abs(initial_fluctuation_rate)/100 * 0.5\
@@ -221,7 +219,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             break
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=6):
-            print(f'[{symbol}] : 거래 시작 후 6시간 경과이므로 포지션 종료')
+            print(f'[{symbol}] : 손실 구간이나 거래 시작 후 6시간 경과이므로 포지션 종료')
             break
 
     # 포지큼 종료
