@@ -8,7 +8,7 @@ import time
 # 프린트 규칙 : 포지션 비율은 소수 세 자리로 (0.034), 수익률은 퍼센트 소수 한자리로 (5.2%) 프린트
 class Trader:
     LEVERAGE = 15
-    MAX_LOSS_RATE = -0.03  # 전체 자산 대비 최대 손실 비율
+    MAX_LOSS_RATE = -0.02  # 전체 자산 대비 최대 손실 비율
     BUY_POSITION_NUM_STR = 'buy_position_number'
     SELL_POSITION_NUM_STR = 'sell_position_number'
 
@@ -106,11 +106,9 @@ class Trader:
         order = self.create_market_order(amount)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
-        self.update_from_balance()
-        print(f'[{self.symbol}] 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
         while self.amount == prev_amount:
             self.update_from_balance()
-            print(f'[{self.symbol}] 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+        print(f'---> 포지션 증가 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
 
     def reduce_only(self, rate):
         self.update_from_balance()
@@ -121,12 +119,23 @@ class Trader:
         self.update_last_price_from_order(order)
         while self.amount == prev_amount:
             self.update_from_balance()
-        print(f'[{self.symbol}] 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+        print(f'---> 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
+
+    def reduce_only_to_rate(self, target_margin_rate):
+        self.update_from_balance()
+        prev_amount = self.amount
+        amount = -1 * prev_amount * (self.margin_rate - target_margin_rate)
+        order = self.create_market_order(amount, reduce_only=True)
+        self.print_order_result(order)
+        self.update_last_price_from_order(order)
+        while self.amount == prev_amount:
+            self.update_from_balance()
+        print(f'---> 포지션 감소 후 {self.amount}(평균 단가 : {self.offset_price})로 업데이트')
 
     def close_all_positions(self):
         self.update_from_balance()
         self.create_market_order(-1 * self.amount, reduce_only=True)
-        print(f'[{self.symbol}] 포지션 종료\n')
+        print(f'---> {self.symbol} 포지션 종료\n')
         self.rd.set(self.symbol, 'not trading')
         self.reset_position_number()
 
@@ -188,8 +197,12 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         trader.update_current_price()
         did_change_to_black = trader.update_is_earning()
 
-        if did_change_to_black and trader.margin_rate > 0.05 and (trader.last_price - trader.offset_price) * trader.is_buy < 0:
-                print(f'[{trader.symbol}] margin_rate : 본절 도달 후 포지션({trader.get_formatted_margin_rate()}) 줄이기 신호 발생')
+        if did_change_to_black and trader.margin_rate > 0.033 and (trader.offset_price - trader.last_price) * trader.is_buy > 0:
+            if trader.margin_rate > 0.06:
+                print(f'[{trader.symbol}] 본절 도달 후 포지션({trader.get_formatted_margin_rate()}) 0.03까지 줄이기 신호 발생')
+                trader.reduce_only_to_rate(0.03)
+            else:
+                print(f'[{trader.symbol}] 본절 도달 후 포지션({trader.get_formatted_margin_rate()}) 50% 줄이기 신호 발생')
                 trader.reduce_only(0.50)
 
         # 급등락 포지션 정리
@@ -200,7 +213,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             fluctuation_rate = (price - prev_price) / prev_price * 100
             if abs(fluctuation_rate) >= 1.5:
                 if trader.get_pnl_rate_from_last_price() > 0.01:
-                    print(f'[{symbol}] : 1분 동안 {trader.format_rate_to_percentage(abs(fluctuation_rate))}% 만큼 '
+                    print(f'[{symbol}] 1분 동안 {trader.format_rate_to_percentage(abs(fluctuation_rate))}% 만큼 '
                           f'{"급등" if fluctuation_rate > 0 else "급락"} 및 마지막 매수가 기준 1% 이상 '
                           f'({trader.get_formatted_pnl_rate_from_last_price()}%) 변동')
                     if abs(trader.margin_rate) < 0.02:
@@ -212,21 +225,21 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
 
         # 5% 이상 손실 시 전체 포지션 종료
         if trader.get_if_exceeds_max_loss():
-            print(f'[{symbol}] : 3% 이상 손실로 인해 포지션 종료')
+            print(f'[{symbol}] 2% 이상 손실로 인해 포지션 종료')
             trader.record_max_loss()
             break
 
         # 물타기
         if trader.get_pnl_rate_from_last_price() < -0.02 and trader.get_pnl_rate_from_offset_price() < -0.02:
             if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1):
-                print(f'[{symbol}] : 물타기 3% => 직전 거래가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) '
+                print(f'[{symbol}] 물타기 3% => 직전 거래가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) '
                       f'손실 및 평단가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 손실')
                 trader.increase_position(0.03)
 
         if trader.get_pnl_rate_from_offset_price() > abs(initial_fluctuation_rate)/100 * 0.5\
                 and trader.get_pnl_rate_from_last_price() > 0.01:
-            print(f'1% 이익 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 및 '
-                      f'직전 거래가보다 1% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) 이익')
+            print(f'[{symbol}] 1% 이상 이익 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 및 '
+                      f'직전 거래가보다 1% 이상 이익 ({trader.get_formatted_pnl_rate_from_last_price()}%)')
             if abs(trader.margin_rate) < 0.02:
                 print(f'---> 포지션 {trader.get_formatted_margin_rate()} < 0.02 : 포지션 종료')
                 break
@@ -235,11 +248,11 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             trader.reduce_only(0.50)
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=3) and trader.is_earning:
-            print(f'[{symbol}] : 거래 시작 후 3시간 경과 및 이익 구간이므로 포지션 종료')
+            print(f'[{symbol}] 거래 시작 후 3시간 경과 및 이익 구간이므로 포지션 종료')
             break
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=6):
-            print(f'[{symbol}] : 손실 구간이나 거래 시작 후 6시간 경과이므로 포지션 종료')
+            print(f'[{symbol}] 손실 구간이나 거래 시작 후 6시간 경과이므로 포지션 종료')
             break
 
     # 포지큼 종료
