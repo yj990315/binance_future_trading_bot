@@ -4,6 +4,8 @@ import redis
 import datetime
 import time
 
+
+# 프린트 규칙 : 포지션 비율은 소수 세 자리로 (0.034), 수익률은 퍼센트 소수 한자리로 (5.2%) 프린트
 class Trader:
     LEVERAGE = 15
     MAX_LOSS_RATE = -0.03  # 전체 자산 대비 최대 손실 비율
@@ -37,27 +39,27 @@ class Trader:
         if self.side == 'buy':
             previous_position_num = int(self.rd.get(self.BUY_POSITION_NUM_STR))
             self.rd.set(self.BUY_POSITION_NUM_STR, previous_position_num + 1)
-            print(f'[{self.symbol}] 매수 시작 : 총 매수 포지션 수 {previous_position_num + 1}로 업데이트')
+            print(f'---> 매수 시작 : 총 매수 포지션 수 {previous_position_num + 1}로 업데이트')
         if self.side == 'sell':
             previous_position_num = int(self.rd.get(self.SELL_POSITION_NUM_STR))
             self.rd.set(self.SELL_POSITION_NUM_STR, previous_position_num + 1)
-            print(f'[{self.symbol}] 매도 시작 : 총 매도 포지션 수 {previous_position_num + 1}로 업데이트')
+            print(f'---> 매도 시작 : 총 매도 포지션 수 {previous_position_num + 1}로 업데이트')
 
     def reset_position_number(self):
         if self.side == 'buy':
             previous_position_num = int(self.rd.get(self.BUY_POSITION_NUM_STR))
             self.rd.set(self.BUY_POSITION_NUM_STR, previous_position_num - 1)
-            print(f'[{self.symbol}] 매수 종료 : 총 매수 포지션 수 {previous_position_num - 1}로 업데이트')
+            print(f'---> 매수 종료 : 총 매수 포지션 수 {previous_position_num - 1}로 업데이트')
 
         if self.side == 'sell':
             previous_position_num = int(self.rd.get(self.SELL_POSITION_NUM_STR))
             self.rd.set(self.SELL_POSITION_NUM_STR, previous_position_num - 1)
-            print(f'[{self.symbol}] 매도 종료 : 총 매도 포지션 수 {previous_position_num - 1}로 업데이트')
+            print(f'---> 매도 종료 : 총 매도 포지션 수 {previous_position_num - 1}로 업데이트')
 
     def print_order_result(self, order):
         last_price = float(order['price'])
         amount = float(order['amount'])
-        order_result_str = f'[{self.symbol}] @@@ {last_price}에 {abs(amount)} USDT {"buy" if amount > 0 else "sell"}'
+        order_result_str = f'---> @@@ {last_price}에 {abs(amount)} USDT {"매수" if amount > 0 else "매도"}'
         print(order_result_str)
 
     def update_from_balance(self):
@@ -87,8 +89,6 @@ class Trader:
     def update_is_earning(self):
         prev_is_earning = self.is_earning
         self.is_earning = (self.current_price - self.offset_price) * self.is_buy > 0
-        # if prev_is_earning != self.is_earning:
-        #     print(f'is_earning : {self.is_earning}로 업데이트')
         did_change_to_black =  not prev_is_earning and self.is_earning
         return did_change_to_black
 
@@ -156,6 +156,21 @@ class Trader:
         time_string = datetime.datetime.strftime(datetime.datetime.now(), MAX_LOSS_TIME_FORMAT)
         self.rd.set(last_max_loss_symbol, time_string)
 
+    # 세 자리 소수로 출력 EX) 0.042
+    def get_formatted_margin_rate(self):
+        return round(abs(self.margin_rate), 3)
+
+    # % 단위로 출력 EX) 3.2
+    def get_formatted_pnl_rate_from_last_price(self):
+        return self.format_rate_to_percentage(abs(self.get_pnl_rate_from_last_price()))
+
+    # % 단위로 출력 EX) 3.2
+    def get_formatted_pnl_rate_from_offset_price(self):
+        return self.format_rate_to_percentage(abs(self.get_pnl_rate_from_offset_price()))
+
+    def format_rate_to_percentage(self, rate):
+        return round(rate*100, 1)
+
 
 @app.task
 def trade(db_number, symbol, initial_fluctuation_rate, price):
@@ -174,7 +189,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         did_change_to_black = trader.update_is_earning()
 
         if did_change_to_black and trader.margin_rate > 0.05 and (trader.last_price - trader.offset_price) * trader.is_buy < 0:
-                print(f'[{trader.symbol}] margin_rate : {trader.margin_rate} 본절 도달 후 포지션 줄이기 신호 발생')
+                print(f'[{trader.symbol}] margin_rate : 본절 도달 후 포지션({trader.get_formatted_margin_rate()}) 줄이기 신호 발생')
                 trader.reduce_only(0.50)
 
         # 급등락 포지션 정리
@@ -185,12 +200,14 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
             fluctuation_rate = (price - prev_price) / prev_price * 100
             if abs(fluctuation_rate) >= 1.5:
                 if trader.get_pnl_rate_from_last_price() > 0.01:
-                    print(f'[{symbol}] : 1분 동안 {fluctuation_rate}만큼 급등 및 마지막 매수가 기준 1프로 이상 변동')
+                    print(f'[{symbol}] : 1분 동안 {trader.format_rate_to_percentage(abs(fluctuation_rate))}% 만큼 '
+                          f'{"급등" if fluctuation_rate > 0 else "급락"} 및 마지막 매수가 기준 1% 이상 '
+                          f'({trader.get_formatted_pnl_rate_from_last_price()}%) 변동')
                     if abs(trader.margin_rate) < 0.02:
-                        print(f'[{symbol}] : 급등락 발생 & 포지션 0.02 이하로 인해 포지션 종료')
+                        print(f'--> 급등락 발생 & 포지션 0.02 이하({trader.get_formatted_margin_rate()})로 인해 포지션 종료')
                         break
                     else:
-                        print(f'[{symbol}] : 급등락 발생 & 포지션 0.02 이상 포지션 50% Reduce Only')
+                        print(f'--> 급등락 발생 & 포지션 0.02 이상(({trader.get_formatted_margin_rate()})) 50% Reduce Only')
                         trader.reduce_only(0.50)
 
         # 5% 이상 손실 시 전체 포지션 종료
@@ -202,16 +219,19 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         # 물타기
         if trader.get_pnl_rate_from_last_price() < -0.02 and trader.get_pnl_rate_from_offset_price() < -0.02:
             if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1):
-                print(f'[{symbol}] : 물타기 3% => 직전 거래가보다 2% 이상 손실 및 평단가보다 2프로 이상 손실')
+                print(f'[{symbol}] : 물타기 3% => 직전 거래가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) '
+                      f'손실 및 평단가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 손실')
                 trader.increase_position(0.03)
 
         if trader.get_pnl_rate_from_offset_price() > abs(initial_fluctuation_rate)/100 * 0.5\
                 and trader.get_pnl_rate_from_last_price() > 0.01:
+            print(f'1% 이익 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 및 '
+                      f'직전 거래가보다 1% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) 이익')
             if abs(trader.margin_rate) < 0.02:
-                print(f'[{symbol}] : {abs(trader.margin_rate)} < 0.02 : 포지션 종료 => 1% 이익 및 직전 거래가보다 1% 이상 이익')
+                print(f'---> 포지션 {trader.get_formatted_margin_rate()} < 0.02 : 포지션 종료')
                 break
 
-            print(f'[{symbol}] : 익절 50% => 최초 변동폭의 절반 회복 및 직전 거래가보다 1% 이상 이익')
+            print(f'---> 포지션 {trader.get_formatted_margin_rate()} 익절 50%')
             trader.reduce_only(0.50)
 
         if datetime.datetime.now() - start_trading_time > datetime.timedelta(hours=3) and trader.is_earning:
