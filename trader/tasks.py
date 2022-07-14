@@ -232,9 +232,9 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         # 물타기
         if trader.get_pnl_rate_from_last_price() < -0.02 and trader.get_pnl_rate_from_offset_price() < -0.02:
             if datetime.datetime.now() - trader.last_trade_time > datetime.timedelta(minutes=1) and \
-                    trader.margin_rate < 0.033 :
-                print(f'[{symbol}] 물타기 3% => 직전 거래가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_last_price()}%) '
-                      f'손실 및 평단가보다 2% 이상 ({trader.get_formatted_pnl_rate_from_offset_price()}%) 손실')
+                    trader.margin_rate < 0.033:
+                print(f'[{symbol}] 물타기 3% => 직전 거래가보다 ({trader.get_formatted_pnl_rate_from_last_price()}%) 손실 및 '
+                      f'평단가보다 {trader.get_formatted_pnl_rate_from_offset_price()}% 손실')
                 trader.increase_position(0.03)
 
         if trader.get_pnl_rate_from_offset_price() > abs(initial_fluctuation_rate)/100 * 0.5\
