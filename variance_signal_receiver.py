@@ -176,4 +176,6 @@ def main():
 
 
 if __name__ == '__main__':
+    from trader.celery import app
+    app.control.purge()  # 지금까지 쌓인 신호 삭제 - 비정상적으로 종료된 경우 쌓여 있음.
     main()

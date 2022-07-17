@@ -59,7 +59,8 @@ class Trader:
     def print_order_result(self, order):
         last_price = float(order['price'])
         amount = float(order['amount'])
-        order_result_str = f'---> @@@ {last_price}에 {abs(amount)} USDT {"매수" if amount > 0 else "매도"}'
+        side = order['side']
+        order_result_str = f'---> @@@ {last_price}에 {abs(amount)} USDT {"매수" if side == "buy" else "매도"}'
         print(order_result_str)
 
     def update_from_balance(self):
@@ -193,7 +194,7 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
     trader.increase_position(0.03)
     start_trading_time = datetime.datetime.now()
     while True:
-        time.sleep(0.001)
+        time.sleep(0.005)
         trader.update_current_price()
         did_change_to_black = trader.update_is_earning()
 
@@ -211,11 +212,11 @@ def trade(db_number, symbol, initial_fluctuation_rate, price):
         if prev_price:
             prev_price = float(prev_price)
             fluctuation_rate = (price - prev_price) / prev_price * 100
-            if abs(fluctuation_rate) >= 1.5:
+            if fluctuation_rate * trader.is_buy >= 1.5:
                 if trader.get_pnl_rate_from_last_price() > 0.01:
-                    print(f'[{symbol}] 1분 동안 {trader.format_rate_to_percentage(abs(fluctuation_rate))}% 만큼 '
-                          f'{"급등" if fluctuation_rate > 0 else "급락"} 및 마지막 매수가 기준 1% 이상 '
-                          f'({trader.get_formatted_pnl_rate_from_last_price()}%) 변동')
+                    print(f'[{symbol}] 1분 동안 {round((abs(fluctuation_rate)), 1)}% 만큼 '
+                          f'{"급등" if fluctuation_rate > 0 else "급락"} 및 마지막 매수가 기준 '
+                          f'{trader.get_formatted_pnl_rate_from_last_price()}% 이익')
                     if abs(trader.margin_rate) < 0.02:
                         print(f'--> 급등락 발생 & 포지션 0.02 이하({trader.get_formatted_margin_rate()})로 인해 포지션 종료')
                         break
