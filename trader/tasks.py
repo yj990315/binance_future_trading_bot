@@ -125,7 +125,7 @@ class Trader:
     def reduce_only_to_rate(self, target_margin_rate):
         self.update_from_balance()
         prev_amount = self.amount
-        amount = -1 * prev_amount * (self.margin_rate - target_margin_rate)
+        amount = -1 * prev_amount * (self.margin_rate - target_margin_rate) / self.margin_rate
         order = self.create_market_order(amount, reduce_only=True)
         self.print_order_result(order)
         self.update_last_price_from_order(order)
